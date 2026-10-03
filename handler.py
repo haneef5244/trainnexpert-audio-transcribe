@@ -18,9 +18,11 @@ def handler(event):
         input = event['input']
         
         audio_url = input.get('audio_url')
+        aws_access_key = input.get('AWS_ACCESS_KEY')
+        aws_secret_key = input.get('AWS_SECRET_KEY')
         
         vtt_to_s3, llm_vtt, duration = transcribe_audio(audio_url)
-        chapters = generate_vtt_chapters(llm_vtt, duration, os.environ["AWS_ACCESS_KEY"], os.environ["AWS_SECRET_KEY"])
+        chapters = generate_vtt_chapters(llm_vtt, duration, aws_access_key, aws_secret_key)
 
         return {
             "vtt_to_s3": vtt_to_s3,
