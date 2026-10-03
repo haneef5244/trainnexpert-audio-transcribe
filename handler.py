@@ -26,7 +26,7 @@ def handler(event):
 
         return {
             "vtt_to_s3": vtt_to_s3,
-            "chapters": chapters.model_dump_json(),
+            "chapters": chapters.model_dump(),
         }
     except Exception as err: 
         raise(err)
