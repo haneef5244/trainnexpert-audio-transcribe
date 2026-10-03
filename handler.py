@@ -32,6 +32,6 @@ def handler(event):
         raise(err)
      
 
-# # Start the Serverless function when the script is run
-# if __name__ == '__main__':
-runpod.serverless.start({'handler': handler })
+# Start the Serverless function when the script is run
+if __name__ == '__main__':
+    runpod.serverless.start({'handler': handler })

@@ -1,12 +1,20 @@
-FROM python:3.10-slim
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
 
 # Install dependencies
-RUN pip install --no-cache-dir runpod
-RUN pip install langchain langchain-aws faster-whisper
-# Copy your handler file
-COPY handler.py /
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY handler.py transcriber.py chapter_marker.py /
 
 # Start the container
 CMD ["python3", "-u", "handler.py"]

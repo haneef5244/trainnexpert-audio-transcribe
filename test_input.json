@@ -1,6 +1,8 @@
 {
     "input": {
         "prompt": "Hey there!",
-        "audio_url": "https://trainnexpert-dev-public-assets.s3.ap-southeast-1.amazonaws.com/training-thumbnails/MC1EchoFile.mp3"
+        "audio_url": "https://trainnexpert-dev-public-assets.s3.ap-southeast-1.amazonaws.com/training-thumbnails/MC1EchoFile.mp3",
+        "AWS_ACCESS_KEY": "",
+        "AWS_SECRET_KEY": ""
     }
 }

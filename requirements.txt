@@ -1,0 +1,6 @@
+runpod
+faster-whisper
+langchain
+langchain-core
+langchain-aws
+pydantic
