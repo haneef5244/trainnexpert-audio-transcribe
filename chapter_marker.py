@@ -2,7 +2,7 @@
 import math
 import os
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from langchain_aws import ChatBedrockConverse
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
@@ -28,6 +28,8 @@ ChapterCategory = Literal["general", "key_takeaway", "interactive_exercise", "kn
 
 class GeneratedChapter(BaseModel):
     """What the model is asked for. End times are derived afterwards rather than generated."""
+    section: str = Field(description="Title of the module this chapter belongs to, max 6 words. Consecutive chapters in the same module "
+                                     "must use exactly the same section title; start a new section only when the training moves to a new major topic.")
     start: int = Field(description="The start time of the chapter in seconds, taken from the [n] markers in the transcription")
     title: str = Field(description="Short chapter title, max 8 words, describing the topic covered")
     description: str = Field(description="One plain sentence, max 18 words, telling the learner what they will learn or do in this chapter. "
@@ -48,6 +50,7 @@ class ChapterMarker(BaseModel):
     title: str
     description: str
     category: ChapterCategory
+    section: str
 
 
 class ListChapterMarker(BaseModel):
@@ -74,6 +77,8 @@ PROMPT = ChatPromptTemplate.from_messages(
                     "possibly with a little extra before and after for context. Only create chapters that start between second {part_start} and second {part_end}.\n"
                     "Each chapter marks the start of a distinct topic or section. Aim for roughly one chapter every 4 to 6 minutes of content, "
                     "and never more than {max_chapters} chapters.\n"
+                    "Also group the chapters into modules for a table of contents: each module is a major topic lasting roughly 20 to 45 minutes, "
+                    "and every chapter carries its module's title in the section field.{previous_section}\n"
                     "Only use a category other than 'general' when the transcription clearly supports it."),
         HumanMessagePromptTemplate.from_template("""<transcription>{vtt_content}</transcription>
 
@@ -116,10 +121,17 @@ def finalize_chapters(chapters: list[GeneratedChapter], duration: int) -> ListCh
         if not title or start in seen:
             continue
         seen.add(start)
-        cleaned.append((start, title, " ".join(chapter.description.split())[:240], chapter.category))
+        section = " ".join(chapter.section.split())[:80]
+        cleaned.append((start, title, " ".join(chapter.description.split())[:240], chapter.category, section))
     cleaned.sort(key=lambda item: item[0])
     if cleaned:
         cleaned[0] = (0, *cleaned[0][1:])
+    # A chapter the model left without a section joins the module before it
+    # (or, at the very start, the first module that has a title).
+    first_section = next((item[4] for item in cleaned if item[4]), "Course Content")
+    for i, item in enumerate(cleaned):
+        if not item[4]:
+            cleaned[i] = (*item[:4], cleaned[i - 1][4] if i > 0 else first_section)
 
     return ListChapterMarker(chapter_markers=[
         ChapterMarker(
@@ -128,14 +140,22 @@ def finalize_chapters(chapters: list[GeneratedChapter], duration: int) -> ListCh
             title=title,
             description=description,
             category=category,
+            section=section,
         )
-        for i, (start, title, description, category) in enumerate(cleaned)
+        for i, (start, title, description, category, section) in enumerate(cleaned)
     ])
 
 
-def generate_part(chain, text: str, part_start: int, part_end: int, duration: int) -> list[GeneratedChapter]:
+def generate_part(chain, text: str, part_start: int, part_end: int, duration: int, previous_section: Optional[str]) -> list[GeneratedChapter]:
     max_chapters = max(3, math.ceil((part_end - part_start) / SECONDS_PER_CHAPTER_CAP))
+    # Parts are chaptered one after another, so a module that runs across a
+    # part boundary can keep its exact title instead of being split in two.
+    continuation = (
+        f" The previous part of the training ended in the module '{previous_section}'; if this part continues that topic, "
+        "reuse exactly that section title for its first chapters."
+    ) if previous_section else ""
     result = chain.invoke(input={
+        "previous_section": continuation,
         "vtt_content": text,
         "duration": duration,
         "part_start": part_start,
@@ -180,7 +200,8 @@ def generate_vtt_chapters(vtt_content: str, duration: int, aws_access_key: str, 
 
     chapters = []
     for part_start, part_end, text in split_into_parts(vtt_content, duration):
-        chapters.extend(generate_part(chain, text, part_start, part_end, duration))
+        previous_section = max(chapters, key=lambda chapter: chapter.start).section if chapters else None
+        chapters.extend(generate_part(chain, text, part_start, part_end, duration, previous_section))
 
     result = finalize_chapters(chapters, duration)
     if not result.chapter_markers:
