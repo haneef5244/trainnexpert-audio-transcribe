@@ -23,6 +23,11 @@ OVERLAP_SECONDS = 5 * 60
 # Aim for one chapter every 4–6 minutes; this sets the ceiling per part.
 SECONDS_PER_CHAPTER_CAP = 4 * 60
 
+# Roughly one module per this much video. Shorter recordings get a single
+# section, which the app shows as a plain chapter list.
+SECONDS_PER_MODULE = 25 * 60
+MIN_SECONDS_FOR_MODULES = 40 * 60
+
 ChapterCategory = Literal["general", "key_takeaway", "interactive_exercise", "knowledge_check"]
 
 
@@ -77,8 +82,8 @@ PROMPT = ChatPromptTemplate.from_messages(
                     "possibly with a little extra before and after for context. Only create chapters that start between second {part_start} and second {part_end}.\n"
                     "Each chapter marks the start of a distinct topic or section. Aim for roughly one chapter every 4 to 6 minutes of content, "
                     "and never more than {max_chapters} chapters.\n"
-                    "Also group the chapters into modules for a table of contents: each module is a major topic lasting roughly 20 to 45 minutes, "
-                    "and every chapter carries its module's title in the section field.{previous_section}\n"
+                    "Also group the chapters into modules for a table of contents: {module_guidance} "
+                    "Every chapter carries its module's title in the section field, and all chapters in one module use exactly the same title.{previous_section}\n"
                     "Only use a category other than 'general' when the transcription clearly supports it."),
         HumanMessagePromptTemplate.from_template("""<transcription>{vtt_content}</transcription>
 
@@ -154,7 +159,18 @@ def generate_part(chain, text: str, part_start: int, part_end: int, duration: in
         f" The previous part of the training ended in the module '{previous_section}'; if this part continues that topic, "
         "reuse exactly that section title for its first chapters."
     ) if previous_section else ""
+    # The model is told how many modules to make; left to itself it tends to
+    # give every chapter its own module.
+    if duration < MIN_SECONDS_FOR_MODULES:
+        module_guidance = "this training is short, so put every chapter in one single module."
+    else:
+        target = max(2, round((part_end - part_start) / SECONDS_PER_MODULE))
+        module_guidance = (
+            f"for this part, create between {max(1, target - 1)} and {target + 1} modules, each a major topic covering "
+            "several consecutive chapters (never one module per chapter)."
+        )
     result = chain.invoke(input={
+        "module_guidance": module_guidance,
         "previous_section": continuation,
         "vtt_content": text,
         "duration": duration,
