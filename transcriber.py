@@ -6,9 +6,17 @@ from faster_whisper import WhisperModel
 import math
 
 
-# Loaded once at module level, not per call — avoids reloading the models
-# (and re-downloading from Hugging Face) on every transcription run.
-whisper_model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+# Loaded on first use, then kept for the life of the worker — avoids
+# reloading the model (and re-downloading from Hugging Face) on every run,
+# while chapters-only jobs, which never transcribe, don't pay for loading it.
+_whisper_model = None
+
+
+def get_whisper_model() -> WhisperModel:
+    global _whisper_model
+    if _whisper_model is None:
+        _whisper_model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+    return _whisper_model
 
 MAX_CUE_DURATION = 6.0   # seconds
 MAX_CUE_CHARS = 80
@@ -28,7 +36,7 @@ def transcribe_audio(audio_url: str):
     try:
         urllib.request.urlretrieve(audio_url, local_audio_path)
 
-        segments, info = whisper_model.transcribe(
+        segments, info = get_whisper_model().transcribe(
             local_audio_path,
             language=None,
             vad_filter=True,

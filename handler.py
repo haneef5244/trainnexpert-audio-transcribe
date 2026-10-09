@@ -37,6 +37,20 @@ def handler(event):
         aws_secret_key = input.get('AWS_SECRET_KEY')
         vtt_upload_url = input.get('vtt_upload_url')
         vtt_s3_key = input.get('vtt_s3_key')
+
+        # Chapters-only: the API sends the course's existing captions as
+        # "[<seconds>] text" lines, so there's nothing to transcribe and the
+        # captions are left as they are.
+        transcript_text = input.get('transcript_text')
+        if transcript_text:
+            duration = int(input.get('duration_seconds') or 0)
+            if duration <= 0:
+                raise ValueError("duration_seconds is required with transcript_text")
+            chapters = generate_vtt_chapters(transcript_text, duration, aws_access_key, aws_secret_key)
+            return {
+                "mode": "chapters_only",
+                "chapters": chapters.model_dump(),
+            }
         
         vtt_to_s3, llm_vtt, duration = transcribe_audio(audio_url)
         chapters = generate_vtt_chapters(llm_vtt, duration, aws_access_key, aws_secret_key)
